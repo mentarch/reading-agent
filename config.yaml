@@ -3,7 +3,7 @@ sources:
   # ArXiv RSS Configuration
   - name: "arXiv"
     type: "rss"
-    url: "http://export.arxiv.org/rss/cs.CV"  # Computer Vision category
+    url: "https://rss.arxiv.org/rss/cs.CV"  # Computer Vision category
     enabled: true
     
   # PubMed RSS Configuration
@@ -49,4 +49,5 @@ app:
   log_level: "info"
   openai_model: "gpt-4o"  # Model to use for summarization
   max_summary_length: 150  # Maximum length of article summary in tokens (reduced for 2-3 sentence summaries)
-  max_articles_to_process: 5 
+  max_articles_to_process: 5  # Maximum number of articles to process per source
+  tracking_retention_days: 30  # Number of days to keep track of processed articles 

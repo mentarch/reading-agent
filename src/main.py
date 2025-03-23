@@ -9,14 +9,29 @@ import sys
 import time
 import logging
 import schedule
+from datetime import datetime
 from dotenv import load_dotenv
 
+# Adjust Python path for imports to work both when run as module and as script
+sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
+
 # Import project modules
-from src.utils.config_loader import load_config
-from src.utils.logger import setup_logger
-from src.readers.reader_factory import create_readers
-from src.summarizers.summarizer import summarize_article
-from src.emailer.email_sender import send_email_digest
+try:
+    # Try relative imports first (when run as module)
+    from utils.config_loader import load_config
+    from utils.logger import setup_logger
+    from utils.article_tracker import ArticleTracker
+    from readers.reader_factory import create_readers
+    from summarizers.summarizer import summarize_article
+    from emailer.email_sender import send_email_digest
+except ImportError:
+    # Fall back to absolute imports (when run from project root)
+    from src.utils.config_loader import load_config
+    from src.utils.logger import setup_logger
+    from src.utils.article_tracker import ArticleTracker
+    from src.readers.reader_factory import create_readers
+    from src.summarizers.summarizer import summarize_article
+    from src.emailer.email_sender import send_email_digest
 
 # Load environment variables but ignore proxy settings from .env file
 # This prevents conflicts with system proxy configuration
@@ -55,6 +70,16 @@ def process_articles(config):
     topics = config.get('topics', [])
     logging.info(f"Filtering for topics: {', '.join(topics)}")
     
+    # Initialize article tracker
+    storage_path = config.get('app', {}).get('storage_path', './data')
+    tracker = ArticleTracker(storage_path)
+    
+    # Clear old tracked articles after 30 days (configurable)
+    retention_days = config.get('app', {}).get('tracking_retention_days', 30)
+    num_cleared = tracker.clear_older_than(retention_days)
+    if num_cleared > 0:
+        logging.info(f"Cleared {num_cleared} articles older than {retention_days} days")
+    
     new_articles = []
     max_articles_to_process = config.get('app', {}).get('max_articles_to_process', 5)
     
@@ -68,21 +93,38 @@ def process_articles(config):
             filtered_articles = reader.filter_by_topics(articles, topics)
             logging.info(f"Filtered to {len(filtered_articles)} relevant articles from {reader.name}")
             
+            # Filter out already processed articles
+            unprocessed_articles = []
+            for article in filtered_articles:
+                if not tracker.is_processed(article):
+                    unprocessed_articles.append(article)
+                
+            logging.info(f"Found {len(unprocessed_articles)} new articles to process from {reader.name}")
+            
             # Limit articles to process (take just the first few most relevant)
-            articles_to_process = filtered_articles[:max_articles_to_process]
-            if len(filtered_articles) > max_articles_to_process:
+            articles_to_process = unprocessed_articles[:max_articles_to_process]
+            if len(unprocessed_articles) > max_articles_to_process:
                 logging.info(f"Limiting to {max_articles_to_process} articles for summarization from {reader.name}")
             
             # Summarize each article
             for article in articles_to_process:
                 try:
                     # Pass the entire article object to the new summarize_article function
-                    article['summary'] = summarize_article(
+                    summary = summarize_article(
                         article, 
                         model=config.get('app', {}).get('openai_model', 'gpt-3.5-turbo'),
-                        max_tokens=config.get('app', {}).get('max_summary_length', 300)
+                        max_tokens=config.get('app', {}).get('max_summary_length', 150)
                     )
+                    
+                    # Add summary to article
+                    article['summary'] = summary
+                    
+                    # Mark article as processed with its summary
+                    tracker.mark_processed(article, summary)
+                    
+                    # Add to new articles list
                     new_articles.append(article)
+                    
                     logging.info(f"Successfully summarized: {article.get('title', 'Unknown article')}")
                 except Exception as e:
                     logging.error(f"Error summarizing article {article.get('title', 'Unknown')}: {str(e)}")
