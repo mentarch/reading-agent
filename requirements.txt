@@ -8,5 +8,5 @@ openai==1.13.3
 tiktoken==0.5.2
 lxml==4.9.3
 pymupdf==1.23.8
-nltk==3.8.1
+nltk==3.9.1
 email-validator==2.1.0.post1 
