@@ -1,6 +1,16 @@
-FROM python:3.13-slim
+FROM python:3.11-slim
 
 WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    libxml2-dev \
+    libxslt-dev \
+    build-essential \
+    make \
+    gcc \
+    pkg-config \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker caching
 COPY requirements.txt .
