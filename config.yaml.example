@@ -9,19 +9,19 @@ sources:
   # PubMed RSS Configuration
   - name: "PubMed"
     type: "rss"
-    url: "https://pubmed.ncbi.nlm.nih.gov/rss/search/1lJE88Y8In_tnpUEoGgBF08myjp8NWIwXSjLZ3TJahZHotYgA3/?limit=100&utm_campaign=pubmed-2&fc=20231218105311"  # Machine vision related query
+    url: "https://pubmed.ncbi.nlm.nih.gov/rss/search/YOUR_QUERY_ID/?limit=100"
     enabled: true
     
-  # Example API Configuration (for demonstration)
-  # - name: "CustomAPI"
-  #   type: "api"
-  #   url: "https://api.example.com/articles"
-  #   headers:
-  #     Authorization: "Bearer YOUR_API_KEY"
-  #   params:
-  #     topic: "machine vision"
-  #     limit: 10
-  #   enabled: false  # Disabled by default
+  # Example API Configuration
+  - name: "CustomAPI"
+    type: "api"
+    url: "https://api.example.com/articles"
+    headers:
+      Authorization: "Bearer YOUR_API_KEY"
+    params:
+      topic: "machine vision"
+      limit: 10
+    enabled: false
 
 # Topics of Interest
 topics:
@@ -47,7 +47,7 @@ app:
   update_frequency: "6h"  # How often to check for new articles
   storage_path: "./data"  # Where to store downloaded articles and metadata
   log_level: "info"
-  openai_model: "gpt-4o"  # Model to use for summarization
-  max_summary_length: 150  # Maximum length of article summary in tokens (reduced for 2-3 sentence summaries)
+  openai_model: "gpt-4"  # Model to use for summarization
+  max_summary_length: 150  # Maximum length of article summary in tokens
   max_articles_to_process: 5  # Maximum number of articles to process per source
   tracking_retention_days: 30  # Number of days to keep track of processed articles 

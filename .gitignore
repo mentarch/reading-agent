@@ -175,3 +175,20 @@ cython_debug/
 
 # Application data
 data/processed_articles.json
+
+# Application specific
+config.yaml
+.service.pid
+logs/
+backups/
+data/
+
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS specific
+.DS_Store
+Thumbs.db
