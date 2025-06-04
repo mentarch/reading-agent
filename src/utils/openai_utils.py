@@ -68,27 +68,33 @@ def create_openai_client():
         # This is a hack to work around issues with proxies in the OpenAI client
         import httpx
         original_client_init = httpx.Client.__init__
-        
+
         def patched_client_init(self, *args, **kwargs):
             # Remove the 'proxies' argument if it's present
             if 'proxies' in kwargs:
                 del kwargs['proxies']
             original_client_init(self, *args, **kwargs)
-        
+
         # Apply the monkey patch
         httpx.Client.__init__ = patched_client_init
-        
+
         # Now import and create the OpenAI client
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
-        
+
         return client
     except Exception as e:
         logging.error(f"Failed to create OpenAI client: {e}")
-        
+
         # Fall back to a manual summary approach instead
         return None
     finally:
+        # Restore patched httpx.Client.__init__ if it was modified
+        try:
+            if 'httpx' in locals() and original_client_init:
+                httpx.Client.__init__ = original_client_init
+        except Exception:
+            pass
         # Restore environment variables
         if orig_http_proxy:
             os.environ['HTTP_PROXY'] = orig_http_proxy
