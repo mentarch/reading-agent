@@ -78,9 +78,13 @@ def create_openai_client():
         # Apply the monkey patch
         httpx.Client.__init__ = patched_client_init
 
-        # Now import and create the OpenAI client
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
+        try:
+            # Now import and create the OpenAI client
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+        finally:
+            # Restore patched httpx.Client.__init__ after client creation
+            httpx.Client.__init__ = original_client_init
 
         return client
     except Exception as e:
@@ -89,12 +93,6 @@ def create_openai_client():
         # Fall back to a manual summary approach instead
         return None
     finally:
-        # Restore patched httpx.Client.__init__ if it was modified
-        try:
-            if 'httpx' in locals() and original_client_init:
-                httpx.Client.__init__ = original_client_init
-        except Exception:
-            pass
         # Restore environment variables
         if orig_http_proxy:
             os.environ['HTTP_PROXY'] = orig_http_proxy
