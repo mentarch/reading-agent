@@ -190,4 +190,4 @@ If you encounter issues:
 
 Some sources like arXiv have specific publication schedules:
 - arXiv typically doesn't publish new articles on weekends (as indicated by `<skipDays>` in their RSS feed)
-- If no articles are found, try enabling multiple sources or check on weekdays# Git configuration test
+- If no articles are found, try enabling multiple sources or check on weekdays
