@@ -10,7 +10,7 @@ This application automatically retrieves research articles from configured sourc
 - Email regular digests with article summaries in HTML and plain text formats
 - Configurable schedule for retrievals and emails
 - Robust error handling and retry mechanisms for external services
-- Optimized for running on Python 3.13
+- Optimized for running on Python 3.11+
 - **Article tracking to prevent duplicate processing and summaries**
 
 ## Setup and Installation
