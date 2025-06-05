@@ -12,6 +12,7 @@ This application automatically retrieves research articles from configured sourc
 - Robust error handling and retry mechanisms for external services
 - Optimized for running on Python 3.11+
 - **Article tracking to prevent duplicate processing and summaries**
+- **Quality filtering using citation metrics**
 
 ## Setup and Installation
 
@@ -31,6 +32,7 @@ Edit `config.yaml` to:
 - Limit number of articles to process and include in emails
 - Configure OpenAI model and summary length
 - **Set tracking retention period for processed articles**
+- **Configure citation-based quality filtering**
 
 ## Environment Variables
 
@@ -67,6 +69,13 @@ python src/utils/show_tracked_articles.py --source "arXiv"
 # Output as JSON
 python src/utils/show_tracked_articles.py --format json
 ```
+
+## Quality Filtering
+
+Articles can optionally be filtered based on citation metrics retrieved from Crossref.
+Configure the `quality_filter` section in `config.yaml` to set minimum citation
+counts or journal h-index requirements. Articles below these thresholds are
+skipped during processing.
 
 ## Running and Managing as a Service
 
@@ -174,6 +183,8 @@ Add to your crontab (`crontab -e`):
 - **Resource Optimization**: Limited the number of articles processed to reduce API usage
 - **Better Fallbacks**: Added random summary generation when API summarization fails
 - **Email Formatting**: Improved HTML email template for better readability
+- **Citation Metrics**: Added optional quality filtering based on article
+  citations and journal h-index
 
 ## Troubleshooting
 

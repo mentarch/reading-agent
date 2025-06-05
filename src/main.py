@@ -21,6 +21,7 @@ try:
     from utils.config_loader import load_config
     from utils.logger import setup_logger
     from utils.article_tracker import ArticleTracker
+    from utils.article_filter import ArticleFilter
     from readers.reader_factory import create_readers
     from summarizers.summarizer import summarize_article
     from emailer.email_sender import send_email_digest
@@ -29,6 +30,7 @@ except ImportError:
     from src.utils.config_loader import load_config
     from src.utils.logger import setup_logger
     from src.utils.article_tracker import ArticleTracker
+    from src.utils.article_filter import ArticleFilter
     from src.readers.reader_factory import create_readers
     from src.summarizers.summarizer import summarize_article
     from src.emailer.email_sender import send_email_digest
@@ -73,6 +75,9 @@ def process_articles(config):
     # Initialize article tracker
     storage_path = config.get('app', {}).get('storage_path', './data')
     tracker = ArticleTracker(storage_path)
+
+    # Initialize quality filter
+    q_filter = ArticleFilter(config.get('quality_filter', {}))
     
     # Clear old tracked articles after 30 days (configurable)
     retention_days = config.get('app', {}).get('tracking_retention_days', 30)
@@ -98,12 +103,19 @@ def process_articles(config):
             for article in filtered_articles:
                 if not tracker.is_processed(article):
                     unprocessed_articles.append(article)
-                
+
             logging.info(f"Found {len(unprocessed_articles)} new articles to process from {reader.name}")
-            
+
+            # Apply quality filter
+            quality_articles = q_filter.filter_articles(unprocessed_articles)
+            if len(quality_articles) < len(unprocessed_articles):
+                logging.info(
+                    f"Filtered out {len(unprocessed_articles) - len(quality_articles)} articles below quality threshold"
+                )
+
             # Limit articles to process (take just the first few most relevant)
-            articles_to_process = unprocessed_articles[:max_articles_to_process]
-            if len(unprocessed_articles) > max_articles_to_process:
+            articles_to_process = quality_articles[:max_articles_to_process]
+            if len(quality_articles) > max_articles_to_process:
                 logging.info(f"Limiting to {max_articles_to_process} articles for summarization from {reader.name}")
             
             # Summarize each article
