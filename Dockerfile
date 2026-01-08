@@ -13,12 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy dependency files
-COPY pyproject.toml .
+# Copy dependency files and README for hatchling
+COPY pyproject.toml README.md ./
 
 # Create virtual environment and install dependencies
 RUN uv venv /app/.venv && \
-    uv pip install --python /app/.venv/bin/python -e .
+    uv pip install --python /app/.venv/bin/python .
 
 # Production image
 FROM python:3.11-slim
