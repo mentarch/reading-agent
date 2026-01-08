@@ -1,178 +1,200 @@
 """
-RSS reader implementation for fetching articles from RSS feeds
+RSS reader implementation for fetching articles from RSS feeds asynchronously
 """
 
+import asyncio
 import logging
-import feedparser
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime
+
+import aiohttp
+import feedparser
+from bs4 import BeautifulSoup
+
 from .base_reader import BaseReader
 
+
 class RSSReader(BaseReader):
-    """Reader for RSS feeds like PubMed and arXiv"""
-    
-    def __init__(self, name, url, params=None):
+    """Async reader for RSS feeds like PubMed and arXiv"""
+
+    def __init__(self, name: str, url: str, params: dict | None = None):
         """
         Initialize the RSS reader
-        
+
         Args:
-            name (str): Source name
-            url (str): RSS feed URL
-            params (dict, optional): Additional parameters for the RSS request
+            name: Source name
+            url: RSS feed URL
+            params: Additional parameters for the RSS request
         """
         super().__init__(name, url)
         self.params = params or {}
-        
-    def fetch_articles(self):
+
+    async def fetch_articles(self) -> list[dict]:
         """
-        Fetch articles from RSS feed
-        
+        Fetch articles from RSS feed asynchronously
+
         Returns:
-            list: List of article dictionaries
-            
-        Raises:
-            Exception: If there's an error fetching or parsing the feed
+            List of article dictionaries
         """
         logging.info(f"Fetching articles from {self.name} RSS feed: {self.url}")
-        
+
         try:
-            # Parse the feed
-            feed = feedparser.parse(self.url)
-            
-            if feed.get('bozo_exception'):
+            async with aiohttp.ClientSession() as session:
+                async with session.get(self.url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    content = await resp.text()
+
+            # feedparser is synchronous but fast for parsing
+            feed = feedparser.parse(content)
+
+            if feed.get("bozo_exception"):
                 logging.warning(f"Error parsing feed: {feed.bozo_exception}")
-                
-            # Check if feed has entries
-            if not feed.get('entries'):
+
+            if not feed.get("entries"):
                 logging.warning(f"No entries found in RSS feed: {self.url}")
                 return []
-                
-            articles = []
-            
-            for entry in feed.entries:
-                try:
-                    # Extract article details
-                    article = {
-                        'title': entry.get('title', 'No Title'),
-                        'url': entry.get('link', ''),
-                        'source': self.name,
-                        'content': '',  # Will fetch content separately
-                    }
-                    
-                    # Extract authors if available
-                    if 'authors' in entry:
-                        article['authors'] = [author.get('name', '') for author in entry.authors]
-                    elif 'author' in entry:
-                        article['authors'] = [entry.author]
-                    else:
-                        article['authors'] = []
-                    
-                    # Extract publication date
-                    if 'published_parsed' in entry:
-                        pub_date = entry.published_parsed
-                        article['published_date'] = datetime(*pub_date[:6]).strftime('%Y-%m-%d')
-                    elif 'published' in entry:
-                        article['published_date'] = entry.published
-                    else:
-                        article['published_date'] = 'Unknown Date'
-                        
-                    # Extract content/summary
-                    if 'content' in entry:
-                        article['content'] = entry.content[0].value
-                    elif 'summary' in entry:
-                        article['content'] = entry.summary
-                    else:
-                        article['content'] = ''
-                    
-                    # Fetch full article content if needed
-                    if article['url'] and (not article['content'] or len(article['content']) < 200):
-                        article['content'] = self._fetch_article_content(article['url'])
-                    
-                    # Clean HTML from content
-                    if article['content']:
-                        article['content'] = self._clean_html(article['content'])
-                    
-                    articles.append(article)
-                    
-                except Exception as e:
-                    logging.error(f"Error processing RSS entry: {str(e)}")
-            
+
+            # Fetch article contents concurrently
+            articles = await self._process_entries(feed.entries)
+
             logging.info(f"Fetched {len(articles)} articles from {self.name}")
             return articles
-            
+
+        except asyncio.TimeoutError:
+            logging.error(f"Timeout fetching RSS feed {self.url}")
+            return []
         except Exception as e:
-            logging.error(f"Error fetching RSS feed {self.url}: {str(e)}")
-            raise
-        
-    def _fetch_article_content(self, url):
+            logging.error(f"Error fetching RSS feed {self.url}: {e}")
+            return []
+
+    async def _process_entries(self, entries: list) -> list[dict]:
+        """Process RSS entries and fetch full content concurrently"""
+        articles = []
+        fetch_tasks = []
+
+        for entry in entries:
+            try:
+                article = {
+                    "title": entry.get("title", "No Title"),
+                    "url": entry.get("link", ""),
+                    "source": self.name,
+                    "content": "",
+                    "authors": self._extract_authors(entry),
+                    "published_date": self._extract_date(entry),
+                }
+
+                # Extract initial content from feed
+                if "content" in entry:
+                    article["content"] = entry.content[0].value
+                elif "summary" in entry:
+                    article["content"] = entry.summary
+
+                articles.append(article)
+
+                # Queue content fetch if needed
+                if article["url"] and (not article["content"] or len(article["content"]) < 200):
+                    fetch_tasks.append((len(articles) - 1, article["url"]))
+
+            except Exception as e:
+                logging.error(f"Error processing RSS entry: {e}")
+
+        # Fetch missing content concurrently
+        if fetch_tasks:
+            async with aiohttp.ClientSession() as session:
+                content_results = await asyncio.gather(
+                    *[self._fetch_article_content(session, url) for _, url in fetch_tasks],
+                    return_exceptions=True,
+                )
+
+                for (idx, _), content in zip(fetch_tasks, content_results):
+                    if isinstance(content, str) and content:
+                        articles[idx]["content"] = content
+
+        # Clean HTML from all content
+        for article in articles:
+            if article["content"]:
+                article["content"] = self._clean_html(article["content"])
+
+        return articles
+
+    def _extract_authors(self, entry) -> list[str]:
+        """Extract authors from feed entry"""
+        if "authors" in entry:
+            return [author.get("name", "") for author in entry.authors]
+        elif "author" in entry:
+            return [entry.author]
+        return []
+
+    def _extract_date(self, entry) -> str:
+        """Extract publication date from feed entry"""
+        if "published_parsed" in entry and entry.published_parsed:
+            return datetime(*entry.published_parsed[:6]).strftime("%Y-%m-%d")
+        elif "published" in entry:
+            return entry.published
+        return "Unknown Date"
+
+    async def _fetch_article_content(self, session: aiohttp.ClientSession, url: str) -> str:
         """
-        Fetch the actual article content from the URL
-        
+        Fetch article content from URL asynchronously
+
         Args:
-            url (str): URL of the article
-            
+            session: aiohttp client session
+            url: URL of the article
+
         Returns:
-            str: Article content or empty string on error
+            Article content or empty string on error
         """
         if not url:
             return ""
-            
+
         try:
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            
-            # Parse HTML with BeautifulSoup
-            soup = BeautifulSoup(response.text, 'lxml')
-            
-            # Try to extract article content
-            # This is a simplified approach - might need customization for specific sites
-            
-            # First try common article containers
-            article_content = soup.find('article') or soup.find('div', class_='article')
-            
-            if not article_content:
-                # Look for main content area
-                article_content = soup.find('main') or soup.find('div', id='content')
-            
-            if not article_content:
-                # Just use the body if no better container found
-                article_content = soup.find('body')
-            
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    return ""
+                html = await resp.text()
+
+            soup = BeautifulSoup(html, "lxml")
+
+            # Try common article containers
+            article_content = (
+                soup.find("article")
+                or soup.find("div", class_="article")
+                or soup.find("main")
+                or soup.find("div", id="content")
+                or soup.find("body")
+            )
+
             if article_content:
                 # Remove unwanted elements
-                for unwanted in article_content.find_all(['script', 'style', 'nav', 'header', 'footer', 'aside']):
+                for unwanted in article_content.find_all(
+                    ["script", "style", "nav", "header", "footer", "aside"]
+                ):
                     unwanted.decompose()
-                    
-                return article_content.get_text(separator='\n')
-            else:
-                return soup.get_text(separator='\n')
-                
-        except Exception as e:
-            logging.error(f"Error fetching article content from {url}: {str(e)}")
+                return article_content.get_text(separator="\n")
+
+            return soup.get_text(separator="\n")
+
+        except asyncio.TimeoutError:
+            logging.debug(f"Timeout fetching article content from {url}")
             return ""
-    
-    def _clean_html(self, html_content):
+        except Exception as e:
+            logging.debug(f"Error fetching article content from {url}: {e}")
+            return ""
+
+    def _clean_html(self, html_content: str) -> str:
         """
         Clean HTML from content
-        
+
         Args:
-            html_content (str): HTML content
-            
+            html_content: HTML content
+
         Returns:
-            str: Cleaned text
+            Cleaned text
         """
         if not html_content:
             return ""
-            
+
         try:
-            # Parse with BeautifulSoup
-            soup = BeautifulSoup(html_content, 'lxml')
-            
-            # Extract text
-            return soup.get_text(separator='\n')
-            
+            soup = BeautifulSoup(html_content, "lxml")
+            return soup.get_text(separator="\n")
         except Exception as e:
-            logging.error(f"Error cleaning HTML: {str(e)}")
-            # Return original but strip basic HTML tags
-            return BeautifulSoup(html_content, 'html.parser').get_text() 
+            logging.error(f"Error cleaning HTML: {e}")
+            return BeautifulSoup(html_content, "html.parser").get_text()

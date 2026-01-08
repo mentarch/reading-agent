@@ -1,194 +1,289 @@
 """
-Article tracker module for keeping track of processed articles
+Article tracker module using SQLite for persistent storage
 """
 
-import os
 import json
 import logging
-from datetime import datetime
+import os
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime, timedelta
+from pathlib import Path
+
 
 class ArticleTracker:
     """
-    Tracks which articles have been processed to avoid duplicate processing
-    and summaries.
+    Tracks which articles have been processed to avoid duplicate processing.
+    Uses SQLite for reliable concurrent access and querying.
     """
-    
-    def __init__(self, storage_path="./data"):
+
+    def __init__(self, storage_path: str = "./data"):
         """
         Initialize the article tracker
-        
+
         Args:
-            storage_path (str): Path to the storage directory
+            storage_path: Path to the storage directory
         """
-        self.storage_path = storage_path
-        self.tracker_file = os.path.join(storage_path, "processed_articles.json")
-        self.processed_articles = self._load_tracker()
-        
-    def _load_tracker(self):
-        """
-        Load the tracker file if it exists
-        
-        Returns:
-            dict: Dictionary of processed articles
-        """
-        if not os.path.exists(self.tracker_file):
-            return {}
-            
+        self.storage_path = Path(storage_path)
+        self.storage_path.mkdir(parents=True, exist_ok=True)
+        self.db_path = self.storage_path / "articles.db"
+        self._init_db()
+        self._migrate_from_json()
+
+    def _init_db(self) -> None:
+        """Initialize the SQLite database schema"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS processed_articles (
+                    article_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    url TEXT,
+                    summary TEXT,
+                    processed_date TEXT NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_processed_date
+                ON processed_articles(processed_date)
+            """)
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_source
+                ON processed_articles(source)
+            """)
+            conn.commit()
+
+    @contextmanager
+    def _get_connection(self):
+        """Context manager for database connections with WAL mode"""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.row_factory = sqlite3.Row
         try:
-            with open(self.tracker_file, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            logging.error(f"Error loading article tracker: {str(e)}")
-            return {}
-            
-    def _save_tracker(self):
-        """
-        Save the tracker file
-        """
+            yield conn
+        finally:
+            conn.close()
+
+    def _migrate_from_json(self) -> None:
+        """Migrate existing JSON data to SQLite (one-time migration)"""
+        json_path = self.storage_path / "processed_articles.json"
+        if not json_path.exists():
+            return
+
         try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.tracker_file), exist_ok=True)
-            
-            with open(self.tracker_file, 'w') as f:
-                json.dump(self.processed_articles, f, indent=2)
+            with open(json_path) as f:
+                old_data = json.load(f)
+
+            if not old_data:
+                return
+
+            migrated = 0
+            with self._get_connection() as conn:
+                for article_id, data in old_data.items():
+                    # Check if already migrated
+                    existing = conn.execute(
+                        "SELECT 1 FROM processed_articles WHERE article_id = ?", (article_id,)
+                    ).fetchone()
+
+                    if existing:
+                        continue
+
+                    conn.execute(
+                        """
+                        INSERT INTO processed_articles
+                        (article_id, title, source, url, summary, processed_date)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            article_id,
+                            data.get("title", "Unknown"),
+                            data.get("source", "Unknown"),
+                            data.get("url", ""),
+                            data.get("summary"),
+                            data.get("processed_date", datetime.now().isoformat()),
+                        ),
+                    )
+                    migrated += 1
+
+                conn.commit()
+
+            if migrated > 0:
+                logging.info(f"Migrated {migrated} articles from JSON to SQLite")
+                # Rename old file to prevent re-migration
+                backup_path = json_path.with_suffix(".json.bak")
+                json_path.rename(backup_path)
+                logging.info(f"Backed up old JSON file to {backup_path}")
+
         except Exception as e:
-            logging.error(f"Error saving article tracker: {str(e)}")
-            
-    def is_processed(self, article):
+            logging.error(f"Error migrating from JSON: {e}")
+
+    def is_processed(self, article: dict) -> bool:
         """
         Check if an article has been processed
-        
+
         Args:
-            article (dict): Article to check
-            
+            article: Article dictionary
+
         Returns:
-            bool: True if article has been processed, False otherwise
+            True if article has been processed
         """
-        # Create a unique identifier for the article
         article_id = self._get_article_id(article)
-        
-        # Check if article is in the tracker
-        return article_id in self.processed_articles
-        
-    def mark_processed(self, article, summary=None):
+        with self._get_connection() as conn:
+            result = conn.execute(
+                "SELECT 1 FROM processed_articles WHERE article_id = ?", (article_id,)
+            ).fetchone()
+            return result is not None
+
+    def mark_processed(self, article: dict, summary: str | None = None) -> bool:
         """
         Mark an article as processed
-        
+
         Args:
-            article (dict): Article to mark as processed
-            summary (str): Summary of the article if available
-            
+            article: Article dictionary
+            summary: Summary of the article if available
+
         Returns:
-            bool: True if successful, False otherwise
+            True if successful
         """
         try:
-            # Create a unique identifier for the article
             article_id = self._get_article_id(article)
-            
-            # Add article to tracker with timestamp
-            self.processed_articles[article_id] = {
-                "title": article.get("title", "Unknown"),
-                "source": article.get("source", "Unknown"),
-                "url": article.get("url", ""),
-                "processed_date": datetime.now().isoformat(),
-                "summary": summary
-            }
-            
-            # Save tracker
-            self._save_tracker()
+            with self._get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO processed_articles
+                    (article_id, title, source, url, summary, processed_date)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        article_id,
+                        article.get("title", "Unknown"),
+                        article.get("source", "Unknown"),
+                        article.get("url", ""),
+                        summary,
+                        datetime.now().isoformat(),
+                    ),
+                )
+                conn.commit()
             return True
         except Exception as e:
-            logging.error(f"Error marking article as processed: {str(e)}")
+            logging.error(f"Error marking article as processed: {e}")
             return False
-            
-    def get_processed_articles(self, limit=None, source=None):
+
+    def get_processed_articles(
+        self, limit: int | None = None, source: str | None = None
+    ) -> list[dict]:
         """
         Get list of processed articles
-        
+
         Args:
-            limit (int): Maximum number of articles to return
-            source (str): Filter by source
-            
+            limit: Maximum number of articles to return
+            source: Filter by source
+
         Returns:
-            list: List of processed articles
+            List of processed article dictionaries
         """
-        result = list(self.processed_articles.values())
-        
-        # Filter by source if specified
+        query = "SELECT * FROM processed_articles"
+        params = []
+
         if source:
-            result = [a for a in result if a.get("source") == source]
-            
-        # Sort by processed date (newest first)
-        result.sort(key=lambda x: x.get("processed_date", ""), reverse=True)
-        
-        # Limit results if specified
+            query += " WHERE source = ?"
+            params.append(source)
+
+        query += " ORDER BY processed_date DESC"
+
         if limit and isinstance(limit, int):
-            result = result[:limit]
-            
-        return result
-        
-    def clear_older_than(self, days):
+            query += " LIMIT ?"
+            params.append(limit)
+
+        with self._get_connection() as conn:
+            rows = conn.execute(query, params).fetchall()
+            return [dict(row) for row in rows]
+
+    def clear_older_than(self, days: int) -> int:
         """
         Clear articles older than specified days
-        
+
         Args:
-            days (int): Number of days
-            
+            days: Number of days
+
         Returns:
-            int: Number of articles cleared
+            Number of articles cleared
         """
-        try:
-            if not isinstance(days, int) or days <= 0:
-                return 0
-                
-            # Calculate cutoff date
-            from datetime import datetime, timedelta
-            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-            
-            # Find articles older than cutoff date
-            to_remove = []
-            for article_id, data in self.processed_articles.items():
-                processed_date = data.get("processed_date", "")
-                if processed_date and processed_date < cutoff_date:
-                    to_remove.append(article_id)
-                    
-            # Remove articles
-            for article_id in to_remove:
-                del self.processed_articles[article_id]
-                
-            # Save tracker
-            self._save_tracker()
-            
-            return len(to_remove)
-        except Exception as e:
-            logging.error(f"Error clearing old articles: {str(e)}")
+        if not isinstance(days, int) or days <= 0:
             return 0
-            
-    def _get_article_id(self, article):
+
+        try:
+            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            with self._get_connection() as conn:
+                cursor = conn.execute(
+                    "DELETE FROM processed_articles WHERE processed_date < ?", (cutoff_date,)
+                )
+                conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            logging.error(f"Error clearing old articles: {e}")
+            return 0
+
+    def _get_article_id(self, article: dict) -> str:
         """
         Generate a unique identifier for an article
-        
+
         Args:
-            article (dict): Article to generate ID for
-            
+            article: Article dictionary
+
         Returns:
-            str: Unique identifier
+            Unique identifier string
         """
         # Use URL if available as it should be unique
         if article.get("url"):
-            return article.get("url")
-            
-        # Fall back to title and source if URL is not available
+            return article["url"]
+
+        # Fall back to title and source
         title = article.get("title", "").strip()
         source = article.get("source", "").strip()
-        
+
         if title and source:
             return f"{source}:{title}"
-            
-        # Last resort - use the title alone (not ideal)
+
         if title:
             return title
-            
-        # Can't generate a reliable ID
-        import uuid
-        return str(uuid.uuid4()) 
+
+        # Last resort - generate a hash from available data
+        import hashlib
+
+        content = f"{article.get('title', '')}{article.get('source', '')}{article.get('content', '')}"
+        return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+    def get_stats(self) -> dict:
+        """
+        Get statistics about tracked articles
+
+        Returns:
+            Dictionary with statistics
+        """
+        with self._get_connection() as conn:
+            total = conn.execute("SELECT COUNT(*) FROM processed_articles").fetchone()[0]
+
+            sources = conn.execute("""
+                SELECT source, COUNT(*) as count
+                FROM processed_articles
+                GROUP BY source
+                ORDER BY count DESC
+            """).fetchall()
+
+            oldest = conn.execute(
+                "SELECT MIN(processed_date) FROM processed_articles"
+            ).fetchone()[0]
+
+            newest = conn.execute(
+                "SELECT MAX(processed_date) FROM processed_articles"
+            ).fetchone()[0]
+
+            return {
+                "total_articles": total,
+                "by_source": {row["source"]: row["count"] for row in sources},
+                "oldest_article": oldest,
+                "newest_article": newest,
+            }

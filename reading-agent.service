@@ -1,0 +1,35 @@
+[Unit]
+Description=Reading Agent - Research Article Aggregator
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=reading-agent
+Group=reading-agent
+WorkingDirectory=/opt/reading-agent
+ExecStart=/opt/reading-agent/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+
+# Environment
+EnvironmentFile=/opt/reading-agent/.env
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/reading-agent/data /opt/reading-agent/logs
+
+# Resource limits
+MemoryMax=512M
+CPUQuota=50%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reading-agent
+
+[Install]
+WantedBy=multi-user.target
