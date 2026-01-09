@@ -24,9 +24,7 @@ except ImportError:
 
 
 def retry(max_attempts=3, initial_delay=2, backoff_factor=2):
-    """
-    Decorator for retrying a function with exponential backoff
-    """
+    """Decorator for retrying a function with exponential backoff"""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -55,10 +53,8 @@ def retry(max_attempts=3, initial_delay=2, backoff_factor=2):
 
 def get_email_service():
     """Determine which email service to use based on environment variables"""
-    # Check for Resend first (preferred)
     if os.environ.get('RESEND_API_KEY'):
         return 'resend'
-    # Fall back to SMTP if configured
     if os.environ.get('EMAIL_SMTP_SERVER'):
         return 'smtp'
     return None
@@ -67,14 +63,11 @@ def get_email_service():
 @retry(max_attempts=3, initial_delay=3)
 def send_email_digest(articles, subject_prefix="[Research Update]", email_format="html",
                      include_links=True, max_articles=10):
-    """
-    Send an email digest of summarized articles
-    """
+    """Send an email digest of summarized articles"""
     if not articles:
         logging.warning("No articles to send in digest. Skipping email.")
         return False
 
-    # Limit number of articles
     if len(articles) > max_articles:
         logging.info(f"Limiting digest to {max_articles} articles")
         articles = articles[:max_articles]
@@ -103,10 +96,10 @@ def send_via_resend(articles, subject_prefix, include_links):
     if not to_email:
         raise ValueError("EMAIL_TO or EMAIL_RECIPIENT not configured")
 
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    subject = f"{subject_prefix} Research Digest - {today_date}"
+    today_date = datetime.now().strftime("%B %d, %Y")
+    subject = f"{subject_prefix} {len(articles)} New Articles - {today_date}"
 
-    html_content = create_simple_html_digest(articles, include_links)
+    html_content = create_html_digest(articles, include_links)
     text_content = create_plain_text_digest(articles, include_links)
 
     with httpx.Client(timeout=30.0) as client:
@@ -156,13 +149,13 @@ def send_via_smtp(articles, subject_prefix, email_format, include_links):
         raise ValueError(f"Missing email configuration: {', '.join(missing_config)}")
 
     message = MIMEMultipart("alternative")
-    today_date = datetime.now().strftime("%Y-%m-%d")
-    message["Subject"] = f"{subject_prefix} Research Digest - {today_date}"
+    today_date = datetime.now().strftime("%B %d, %Y")
+    message["Subject"] = f"{subject_prefix} {len(articles)} New Articles - {today_date}"
     message["From"] = sender_email
     message["To"] = recipient_email
 
     text_content = create_plain_text_digest(articles, include_links)
-    html_content = create_simple_html_digest(articles, include_links) if email_format.lower() == "html" else text_content
+    html_content = create_html_digest(articles, include_links) if email_format.lower() == "html" else text_content
 
     part1 = MIMEText(text_content, "plain")
     part2 = MIMEText(html_content, "html")
@@ -185,98 +178,220 @@ def send_via_smtp(articles, subject_prefix, email_format, include_links):
 
     except smtplib.SMTPAuthenticationError as e:
         logging.error(f"Authentication error with SMTP server: {str(e)}")
-        raise ValueError("Failed to authenticate with the SMTP server. Please check your email credentials.") from e
-
+        raise ValueError("Failed to authenticate with SMTP server.") from e
     except smtplib.SMTPServerDisconnected as e:
         logging.error(f"SMTP server disconnected: {str(e)}")
         raise ConnectionError("Connection to SMTP server was lost.") from e
-
     except smtplib.SMTPException as e:
         logging.error(f"SMTP error: {str(e)}")
         raise RuntimeError(f"SMTP error occurred: {str(e)}") from e
-
     except (ConnectionRefusedError, TimeoutError) as e:
         logging.error(f"Connection error: {str(e)}")
         raise ConnectionError(f"Could not connect to SMTP server at {smtp_server}:{smtp_port}") from e
 
 
-def create_simple_html_digest(articles, include_links=True):
-    """Create a simple HTML digest"""
-    html = ["<!DOCTYPE html>",
-            "<html>",
-            "<head>",
-            "<meta charset='UTF-8'>",
-            "<title>Research Article Digest</title>",
-            "</head>",
-            "<body style='font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;'>",
-            "<h1 style='color: #333;'>Research Article Digest</h1>",
-            f"<p>Date: {datetime.now().strftime('%Y-%m-%d')} | Number of articles: {len(articles)}</p>"]
+# Color scheme for sources
+SOURCE_COLORS = {
+    'arxiv': {'bg': '#b31b1b', 'text': '#ffffff'},
+    'pubmed': {'bg': '#326599', 'text': '#ffffff'},
+    'biorxiv': {'bg': '#782624', 'text': '#ffffff'},
+    'medrxiv': {'bg': '#0047AB', 'text': '#ffffff'},
+    'default': {'bg': '#6c757d', 'text': '#ffffff'},
+}
+
+
+def get_source_color(source):
+    """Get color scheme for a source"""
+    source_lower = source.lower()
+    for key in SOURCE_COLORS:
+        if key in source_lower:
+            return SOURCE_COLORS[key]
+    return SOURCE_COLORS['default']
+
+
+def create_html_digest(articles, include_links=True):
+    """Create a modern, mobile-friendly HTML email digest"""
+    today = datetime.now()
+    date_str = today.strftime("%B %d, %Y")
+
+    # Group articles by source for the summary
+    sources = {}
+    for article in articles:
+        src = article.get('source', 'Unknown')
+        sources[src] = sources.get(src, 0) + 1
+
+    source_summary = " · ".join([f"{count} from {src}" for src, count in sources.items()])
+
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Research Digest</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f4f4f7; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f4f4f7;">
+        <tr>
+            <td align="center" style="padding: 40px 20px;">
+                <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width: 600px; width: 100%;">
+
+                    <!-- Header -->
+                    <tr>
+                        <td style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 30px; border-radius: 12px 12px 0 0;">
+                            <h1 style="margin: 0 0 10px 0; color: #ffffff; font-size: 28px; font-weight: 700;">
+                                📚 Research Digest
+                            </h1>
+                            <p style="margin: 0; color: rgba(255,255,255,0.9); font-size: 16px;">
+                                {date_str} · {len(articles)} new articles
+                            </p>
+                            <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.7); font-size: 14px;">
+                                {source_summary}
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Content -->
+                    <tr>
+                        <td style="background-color: #ffffff; padding: 30px;">
+'''
+
+    # Add each article
+    for i, article in enumerate(articles):
+        title = article.get('title', 'No Title')
+        url = article.get('url', '')
+        source = article.get('source', 'Unknown')
+        pub_date = article.get('published_date', '')
+        authors = article.get('authors', [])
+        summary = article.get('summary', 'No summary available.')
+        score = article.get('relevance_score', None)
+
+        # Get source colors
+        colors = get_source_color(source)
+
+        # Format authors (truncate if too many)
+        if authors:
+            if len(authors) > 3:
+                authors_str = f"{authors[0]} et al."
+            else:
+                authors_str = ", ".join(authors)
+        else:
+            authors_str = ""
+
+        # Title with optional link
+        if include_links and url:
+            title_html = f'<a href="{url}" style="color: #1a1a2e; text-decoration: none;">{title}</a>'
+        else:
+            title_html = title
+
+        # Score badge if available
+        score_badge = ""
+        if score is not None:
+            score_color = "#10b981" if score >= 0.7 else "#f59e0b" if score >= 0.4 else "#6b7280"
+            score_badge = f'''
+                <span style="display: inline-block; background-color: {score_color}; color: white; font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 8px;">
+                    {int(score * 100)}% match
+                </span>
+            '''
+
+        # Add spacing between articles (not before first)
+        margin_top = "30px" if i > 0 else "0"
+
+        html += f'''
+                            <!-- Article {i + 1} -->
+                            <div style="margin-top: {margin_top}; padding-bottom: 25px; border-bottom: 1px solid #e5e7eb;">
+                                <!-- Source badge -->
+                                <div style="margin-bottom: 12px;">
+                                    <span style="display: inline-block; background-color: {colors['bg']}; color: {colors['text']}; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+                                        {source}
+                                    </span>
+                                    {score_badge}
+                                </div>
+
+                                <!-- Title -->
+                                <h2 style="margin: 0 0 10px 0; font-size: 18px; font-weight: 600; line-height: 1.4;">
+                                    {title_html}
+                                </h2>
+
+                                <!-- Meta info -->
+                                <p style="margin: 0 0 15px 0; font-size: 13px; color: #6b7280;">
+                                    {f'<span style="color: #374151;">{authors_str}</span> · ' if authors_str else ''}{pub_date if pub_date else ''}
+                                </p>
+
+                                <!-- Summary -->
+                                <p style="margin: 0; font-size: 15px; line-height: 1.6; color: #374151;">
+                                    {summary}
+                                </p>
+
+                                <!-- Read more link -->
+                                {f'<p style="margin: 15px 0 0 0;"><a href="{url}" style="color: #667eea; font-size: 14px; font-weight: 500; text-decoration: none;">Read full paper →</a></p>' if include_links and url else ''}
+                            </div>
+'''
+
+    # Footer
+    html += f'''
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="background-color: #f9fafb; padding: 25px 30px; border-radius: 0 0 12px 12px; border-top: 1px solid #e5e7eb;">
+                            <p style="margin: 0 0 10px 0; font-size: 13px; color: #6b7280; text-align: center;">
+                                This digest was automatically generated by your Research Agent.
+                            </p>
+                            <p style="margin: 0; font-size: 12px; color: #9ca3af; text-align: center;">
+                                Tracking {len(sources)} sources · Next digest in 6 hours
+                            </p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>'''
+
+    return html
+
+
+def create_plain_text_digest(articles, include_links=True):
+    """Create plain text email digest"""
+    today = datetime.now()
+    date_str = today.strftime("%B %d, %Y")
+
+    lines = []
+    lines.append("=" * 50)
+    lines.append(f"RESEARCH DIGEST - {date_str}")
+    lines.append(f"{len(articles)} New Articles")
+    lines.append("=" * 50)
+    lines.append("")
 
     for i, article in enumerate(articles, 1):
         title = article.get('title', 'No Title')
         url = article.get('url', '')
         source = article.get('source', 'Unknown')
-        date = article.get('published_date', 'Unknown date')
+        pub_date = article.get('published_date', '')
         authors = article.get('authors', [])
         summary = article.get('summary', 'No summary available.')
+        score = article.get('relevance_score', None)
 
-        authors_str = ', '.join(authors) if authors else 'Unknown'
-        title_html = f"<a href='{url}' style='color: #3498db;'>{title}</a>" if include_links and url else title
+        lines.append(f"[{i}] {title}")
+        lines.append("-" * 40)
+        lines.append(f"Source: {source}")
+        if authors:
+            lines.append(f"Authors: {', '.join(authors[:3])}{'...' if len(authors) > 3 else ''}")
+        if pub_date:
+            lines.append(f"Published: {pub_date}")
+        if score is not None:
+            lines.append(f"Relevance: {int(score * 100)}%")
+        if include_links and url:
+            lines.append(f"Link: {url}")
+        lines.append("")
+        lines.append(summary)
+        lines.append("")
+        lines.append("=" * 50)
+        lines.append("")
 
-        html.append("<div style='margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #eee;'>")
-        html.append(f"<h2 style='color: #2980b9; font-size: 18px;'>{title_html}</h2>")
-        html.append("<div style='font-size: 13px; color: #666; margin-bottom: 10px;'>")
-        html.append(f"<strong>Authors:</strong> {authors_str} | ")
-        html.append(f"<strong>Source:</strong> {source} | ")
-        html.append(f"<strong>Published:</strong> {date}")
-        html.append("</div>")
-        html.append("<div>")
+    lines.append("This digest was automatically generated by your Research Agent.")
 
-        for paragraph in summary.split('\n'):
-            if paragraph.strip():
-                html.append(f"<p>{paragraph}</p>")
-
-        html.append("</div>")
-        html.append("</div>")
-
-    html.append("<div style='margin-top: 30px; font-size: 12px; color: #999; text-align: center;'>")
-    html.append("<p>This digest was automatically generated by the Research Article Reader and Summarizer.</p>")
-    html.append("</div>")
-    html.append("</body>")
-    html.append("</html>")
-
-    return "\n".join(html)
-
-
-def create_plain_text_digest(articles, include_links=True):
-    """Create plain text email digest"""
-    content = []
-
-    content.append("RESEARCH ARTICLE DIGEST")
-    content.append("======================")
-    content.append(f"Date: {datetime.now().strftime('%Y-%m-%d')}")
-    content.append(f"Number of articles: {len(articles)}")
-    content.append("\n")
-
-    for i, article in enumerate(articles, 1):
-        content.append(f"ARTICLE {i}: {article.get('title', 'No Title')}")
-        content.append("-" * 40)
-
-        if article.get('authors'):
-            content.append(f"Authors: {', '.join(article.get('authors', []))}")
-        content.append(f"Source: {article.get('source', 'Unknown')}")
-        content.append(f"Published: {article.get('published_date', 'Unknown date')}")
-
-        if include_links and article.get('url'):
-            content.append(f"Link: {article.get('url')}")
-
-        content.append("")
-        content.append("SUMMARY:")
-        content.append(article.get('summary', 'No summary available.'))
-        content.append("\n")
-        content.append("=" * 50)
-        content.append("\n")
-
-    content.append("\nThis digest was automatically generated by the Research Article Reader and Summarizer.")
-
-    return "\n".join(content)
+    return "\n".join(lines)
