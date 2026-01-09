@@ -24,6 +24,7 @@ try:
     from readers.reader_factory import create_readers
     from summarizers.summarizer import summarize_article
     from emailer.email_sender import send_email_digest
+    from utils.relevance_scorer import score_and_rank_articles
 except ImportError:
     from src.utils.article_tracker import ArticleTracker
     from src.utils.config_loader import load_config
@@ -31,6 +32,7 @@ except ImportError:
     from src.readers.reader_factory import create_readers
     from src.summarizers.summarizer import summarize_article
     from src.emailer.email_sender import send_email_digest
+    from src.utils.relevance_scorer import score_and_rank_articles
 
 # Load environment variables
 dotenv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -127,6 +129,8 @@ async def process_articles(config: dict) -> list[dict]:
 
     if new_articles:
         logging.info(f"Processed {len(new_articles)} new articles")
+        # Score and rank articles by relevance to topics
+        new_articles = score_and_rank_articles(new_articles, topics)
     else:
         logging.info("No new articles found")
 
