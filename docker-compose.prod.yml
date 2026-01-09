@@ -1,8 +1,6 @@
 services:
   reading-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ghcr.io/mentarch/reading-agent:latest
     container_name: reading-agent
     volumes:
       - ./data:/app/data
@@ -10,4 +8,4 @@ services:
       - ./backups:/app/backups
       - ./config.yaml:/app/config.yaml
     env_file: .env
-    restart: unless-stopped 
+    restart: unless-stopped
