@@ -1,33 +1,131 @@
 # Reading Agent Configuration
 # Copy this to config.yaml and modify as needed
 
-sources:
-  - name: arXiv
-    type: rss
-    url: https://rss.arxiv.org/rss/cs.CV
-    enabled: true
-    max_articles: 50
+# =============================================================================
+# SOURCES - Where to fetch research articles from
+# =============================================================================
+# Two ways to configure sources:
+#
+# 1. PRESET (recommended): Reference a pre-configured source by name
+#    - preset: arxiv-cs-cv    # Just use the preset name
+#      enabled: true          # Optional: disable without removing
+#
+# 2. MANUAL: Specify URL and type directly
+#    - name: My Custom Feed
+#      type: rss
+#      url: https://example.com/feed.xml
+#      enabled: true
 
-  - name: PubMed
-    type: rss
-    url: https://pubmed.ncbi.nlm.nih.gov/rss/search/YOUR_SEARCH_ID/?limit=15
-    enabled: true
-    max_articles: 15
+sources:
+  # === AI/ML Sources (using presets) ===
+  - preset: arxiv-cs-cv          # Computer Vision
+  - preset: arxiv-cs-lg          # Machine Learning
+  - preset: arxiv-cs-ai          # Artificial Intelligence
+    enabled: false               # Disabled - too broad for most use cases
+  - preset: arxiv-cs-cl          # NLP / Computational Linguistics
+    enabled: false
+
+  # === Biomedical (using presets) ===
+  - preset: biorxiv-neuroscience
+    enabled: false
+  - preset: medrxiv-all
+    enabled: false
+
+  # === Tech News ===
+  - preset: hacker-news
+    enabled: false
+  - preset: lobsters
+    enabled: false
+
+  # === Manual configuration example ===
+  # PubMed RSS requires a saved search - create one at:
+  # https://pubmed.ncbi.nlm.nih.gov/ then get RSS URL
+  # - name: PubMed
+  #   type: rss
+  #   url: https://pubmed.ncbi.nlm.nih.gov/rss/search/YOUR_SEARCH_ID/?limit=15
+  #   enabled: true
+
+# =============================================================================
+# AVAILABLE PRESETS
+# =============================================================================
+# arXiv Computer Science:
+#   arxiv-cs-cv    - Computer Vision and Pattern Recognition
+#   arxiv-cs-lg    - Machine Learning
+#   arxiv-cs-ai    - Artificial Intelligence
+#   arxiv-cs-cl    - Computation and Language (NLP)
+#   arxiv-cs-ro    - Robotics
+#   arxiv-cs-ne    - Neural and Evolutionary Computing
+#   arxiv-cs-ir    - Information Retrieval
+#   arxiv-cs-hc    - Human-Computer Interaction
+#   arxiv-cs-se    - Software Engineering
+#   arxiv-cs-cr    - Cryptography and Security
+#
+# arXiv Other:
+#   arxiv-stat-ml  - Statistics / Machine Learning
+#   arxiv-eess-iv  - Image and Video Processing
+#   arxiv-quant-ph - Quantum Physics
+#   arxiv-physics  - General Physics
+#   arxiv-math     - Mathematics
+#
+# Biomedical:
+#   biorxiv-all           - All bioRxiv preprints
+#   biorxiv-neuroscience  - Neuroscience
+#   biorxiv-bioinformatics - Bioinformatics
+#   medrxiv-all           - All medRxiv preprints
+#
+# Tech:
+#   hacker-news    - Hacker News top stories
+#   lobsters       - Lobsters community
+
+# =============================================================================
+# TOPICS - Keywords to filter and rank articles by
+# =============================================================================
+# Articles are filtered to match at least one topic, then ranked by relevance.
+# Multi-word phrases get bonus points for exact matches.
 
 topics:
-  - machine vision
+  - machine learning
+  - deep learning
   - computer vision
   - image recognition
   - object detection
-  - deep learning
+  - neural network
+  - transformer
+  - diffusion model
+
+# =============================================================================
+# EMAIL - How to send the digest
+# =============================================================================
+# Requires RESEND_API_KEY and EMAIL_TO environment variables
 
 email:
   subject_prefix: "[Research Update]"
   format: html
   include_links: true
-  max_articles: 10
+  max_articles_per_email: 10
+
+# =============================================================================
+# APP - General application settings
+# =============================================================================
 
 app:
-  update_frequency: "6h"
-  log_level: info
-  max_articles_per_source: 5
+  # How often to check for new articles
+  update_frequency: "6h"   # Options: "1h", "6h", "12h", "daily"
+
+  # Logging level
+  log_level: info          # Options: debug, info, warning, error
+
+  # Maximum articles to process per source per run
+  max_articles_to_process: 5
+
+  # OpenAI model for summarization
+  openai_model: gpt-4o-mini   # Options: gpt-4o, gpt-4o-mini
+
+  # Maximum tokens for summaries (2-3 sentences)
+  max_summary_length: 150
+
+  # Days to remember processed articles (prevents duplicates)
+  tracking_retention_days: 30
+
+  # Where to store the article tracking database
+  storage_path: ./data
