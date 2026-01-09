@@ -6,14 +6,14 @@ Supports:
 - SMTP (legacy fallback)
 """
 
-import os
 import logging
+import os
 import smtplib
 import ssl
 import time
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from functools import wraps
 
 try:
@@ -209,7 +209,7 @@ def create_simple_html_digest(articles, include_links=True):
             "<title>Research Article Digest</title>",
             "</head>",
             "<body style='font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px;'>",
-            f"<h1 style='color: #333;'>Research Article Digest</h1>",
+            "<h1 style='color: #333;'>Research Article Digest</h1>",
             f"<p>Date: {datetime.now().strftime('%Y-%m-%d')} | Number of articles: {len(articles)}</p>"]
 
     for i, article in enumerate(articles, 1):
@@ -223,9 +223,9 @@ def create_simple_html_digest(articles, include_links=True):
         authors_str = ', '.join(authors) if authors else 'Unknown'
         title_html = f"<a href='{url}' style='color: #3498db;'>{title}</a>" if include_links and url else title
 
-        html.append(f"<div style='margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #eee;'>")
+        html.append("<div style='margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #eee;'>")
         html.append(f"<h2 style='color: #2980b9; font-size: 18px;'>{title_html}</h2>")
-        html.append(f"<div style='font-size: 13px; color: #666; margin-bottom: 10px;'>")
+        html.append("<div style='font-size: 13px; color: #666; margin-bottom: 10px;'>")
         html.append(f"<strong>Authors:</strong> {authors_str} | ")
         html.append(f"<strong>Source:</strong> {source} | ")
         html.append(f"<strong>Published:</strong> {date}")
