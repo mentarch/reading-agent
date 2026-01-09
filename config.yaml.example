@@ -1,53 +1,33 @@
-# Data Sources Configuration
+# Reading Agent Configuration
+# Copy this to config.yaml and modify as needed
+
 sources:
-  # ArXiv RSS Configuration
-  - name: "arXiv"
-    type: "rss"
-    url: "https://rss.arxiv.org/rss/cs.CV"  # Computer Vision category
+  - name: arXiv
+    type: rss
+    url: https://rss.arxiv.org/rss/cs.CV
     enabled: true
-    
-  # PubMed RSS Configuration
-  - name: "PubMed"
-    type: "rss"
-    url: "https://pubmed.ncbi.nlm.nih.gov/rss/search/YOUR_QUERY_ID/?limit=100"
-    enabled: true
-    
-  # Example API Configuration
-  - name: "CustomAPI"
-    type: "api"
-    url: "https://api.example.com/articles"
-    headers:
-      Authorization: "Bearer YOUR_API_KEY"
-    params:
-      topic: "machine vision"
-      limit: 10
-    enabled: false
+    max_articles: 50
 
-# Topics of Interest
+  - name: PubMed
+    type: rss
+    url: https://pubmed.ncbi.nlm.nih.gov/rss/search/YOUR_SEARCH_ID/?limit=15
+    enabled: true
+    max_articles: 15
+
 topics:
-  - "machine vision"
-  - "computer vision"
-  - "image recognition"
-  - "object detection"
-  - "convolutional neural networks"
-  - "deep learning"
-  - "feature extraction"
-  - "image segmentation"
+  - machine vision
+  - computer vision
+  - image recognition
+  - object detection
+  - deep learning
 
-# Email Configuration
 email:
-  schedule: "daily"  # Options: daily, weekly, or a specific time like "08:00"
-  format: "html"     # Options: html, plain
   subject_prefix: "[Research Update]"
+  format: html
   include_links: true
-  max_articles_per_email: 5
+  max_articles: 10
 
-# Application Settings
 app:
-  update_frequency: "6h"  # How often to check for new articles
-  storage_path: "./data"  # Where to store downloaded articles and metadata
-  log_level: "info"
-  openai_model: "gpt-4"  # Model to use for summarization
-  max_summary_length: 150  # Maximum length of article summary in tokens
-  max_articles_to_process: 5  # Maximum number of articles to process per source
-  tracking_retention_days: 30  # Number of days to keep track of processed articles 
+  update_frequency: "6h"
+  log_level: info
+  max_articles_per_source: 5

@@ -37,7 +37,7 @@ COPY --from=builder /app/.venv /app/.venv
 
 # Copy application code
 COPY src/ ./src/
-COPY config.yaml ./
+# Note: config.yaml is mounted at runtime via docker-compose
 
 # Create data directories
 RUN mkdir -p /app/data /app/logs && \
