@@ -56,9 +56,11 @@ ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # function call in default argument
     "SIM108", # use ternary operator
+    "SIM117", # nested with statements
     "B007",   # loop control variable not used
     "B905",   # zip without strict
     "I001",   # import sorting (existing code)
+    "UP041",  # aliased errors (asyncio.TimeoutError)
 ]
 
 [tool.ruff.lint.isort]
